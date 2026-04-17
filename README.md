@@ -1,39 +1,52 @@
-# Calculadora de Inversas de Matrices Modulares
+# 📐 Modular Matrix Inverse Calculator
 
-Calculadora para obtener la inversa modular de matrices 2x2 y 3x3.
+If you just want to try the app, please check the **[Releases](../../releases)** section and download the latest APK.  
+For development and contribution, follow the instructions below.
 
-##usage
+---
 
-1. Instalar dependencias:
-   ```bash
+## 🚀 Usage
+
+1. Install dependencies:
+```bash
    npm install
-   ```
-
-2. Iniciar la app:
-   ```bash
+```
+2. Start the app:
+```bash
    npx expo start
-   ```
+```
 
-## Características
+---
 
-- Soporte para matrices 2×2 y 3×3
-- Cálculo de determinante
-- Verificación de coprimalidad (gcd = 1)
-- Cálculo de inversa modular usando matriz adjunta
-- Verificación: A × A⁻¹ = I (mod n)
-- Modal con proceso detallado paso a paso
-- Tema claro/oscuro automático
+## ✨ Features
 
-## Tech Stack
+- Support for 2×2 and 3×3 matrices  
+- Determinant calculation  
+- Coprimality check (gcd = 1)  
+- Modular inverse calculation using the adjugate matrix  
+- Verification: A × A⁻¹ ≡ I (mod n)  
+- Modal with detailed step‑by‑step process  
+- Automatic light/dark theme  
 
-- Expo (React Native)
-- TypeScript
-- NativeWind + Tailwind CSS
-- Diseño inspirado en Miro
+---
 
-## Teoría
+## 🛠️ Tech Stack
 
-Para que una matriz tenga inversa modular:
-1. det(A) y n deben ser coprimos (gcd(det(A), n) = 1
-2. A⁻¹ = Adj(A) × det(A)⁻¹ (mod n)
-3. Verificación: A × A⁻¹ ≡ I (mod n)# MatrixInverseCalc
+- Expo (React Native)  
+- TypeScript  
+- NativeWind + Tailwind CSS  
+- Design inspired by Miro  
+
+---
+
+## 📖 Theory
+
+For a matrix to have a modular inverse:
+
+1. det(A) and n must be coprime → gcd(det(A), n) = 1  
+2. The inverse is calculated as:  
+   $$A^{-1} = \text{Adj}(A) \times \det(A)^{-1} \pmod{n}$$
+3. Verification:  
+   $$A \times A^{-1} \equiv I \pmod{n}$$
+
+---
