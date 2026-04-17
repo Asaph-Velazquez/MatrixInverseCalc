@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "CalculadoraMatricesModulares",
+    "slug": "CalculadoraMatricesModulares",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "calculadoramatricesmodulares",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "1beec319-e865-437c-854f-860748194ec6"
+      }
+    },
+    "android": {
+      "package": "com.asaphvelazquez.CalculadoraMatricesModulares"
+    }
+  }
+}
