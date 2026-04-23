@@ -93,12 +93,31 @@ export function determinante3x3(matriz: number[][]): number {
 }
 
 /**
+ * Calcula el determinante de una matriz 2x2 o 3x3 aplicando módulo al resultado
+ */
+export function determinanteModular(matriz: number[][], mod: number): number {
+  const tamano = matriz.length;
+
+  if (tamano === 2) {
+    return aplicarModulo(determinante2x2(matriz), mod);
+  }
+
+  if (tamano === 3) {
+    return aplicarModulo(determinante3x3(matriz), mod);
+  }
+
+  throw new Error(
+    "Solo se admiten matrices 2x2 o 3x3 para determinante modular",
+  );
+}
+
+/**
  * Calcula la matriz cofactor para matrices 2x2
  */
 export function matrizCofactor2x2(matriz: number[][]): number[][] {
   return [
-    [matriz[1][1], -matriz[0][1]],
-    [-matriz[1][0], matriz[0][0]],
+    [matriz[1][1], -matriz[1][0]],
+    [-matriz[0][1], matriz[0][0]],
   ];
 }
 
@@ -166,9 +185,42 @@ export function matrizAdjunta(matriz: number[][]): number[][] {
 }
 
 /**
- * Multiplica dos matrices
+ * Suma dos matrices y aplica módulo al resultado
  */
-export function multiplicarMatrices(a: number[][], b: number[][]): number[][] {
+export function sumarMatrices(
+  a: number[][],
+  b: number[][],
+  mod?: number,
+): number[][] {
+  const filas = a.length;
+  const cols = a[0].length;
+  const resultado: number[][] = [];
+
+  for (let i = 0; i < filas; i++) {
+    resultado[i] = [];
+    for (let j = 0; j < cols; j++) {
+      const suma = a[i][j] + b[i][j];
+      resultado[i][j] = mod !== undefined ? aplicarModulo(suma, mod) : suma;
+    }
+  }
+
+  return resultado;
+}
+
+/**
+ * Multiplica dos matrices
+ * @param a - Primera matriz
+ * @param b - Segunda matriz
+ * @param mod - Módulo opcional. Si se proporciona, aplica módulo a cada resultado
+ */
+export function multiplicarMatrices(
+  a: number[][],
+  b: number[][],
+  mod?: number,
+): number[][] {
+  if (!a || !b || a.length === 0 || b.length === 0) return [];
+  if (!a[0] || !b[0] || a[0].length === 0 || b[0].length === 0) return [];
+
   const filasA = a.length;
   const colsA = a[0].length;
   const colsB = b[0].length;
@@ -176,16 +228,33 @@ export function multiplicarMatrices(a: number[][], b: number[][]): number[][] {
 
   for (let i = 0; i < filasA; i++) {
     resultado[i] = [];
+    if (!a[i]) {
+      resultado[i] = new Array(colsB).fill(0);
+      continue;
+    }
     for (let j = 0; j < colsB; j++) {
       let suma = 0;
       for (let k = 0; k < colsA; k++) {
-        suma += a[i][k] * b[k][j];
+        const aVal = a[i]?.[k] ?? 0;
+        const bVal = b[k]?.[j] ?? 0;
+        suma += aVal * bVal;
       }
-      resultado[i][j] = suma;
+      resultado[i][j] = mod !== undefined ? aplicarModulo(suma, mod) : suma;
     }
   }
 
   return resultado;
+}
+
+/**
+ * Multiplica dos matrices aplicando módulo (alias para uso explícito)
+ */
+export function multiplicarMatricesMod(
+  a: number[][],
+  b: number[][],
+  mod: number,
+): number[][] {
+  return multiplicarMatrices(a, b, mod);
 }
 
 /**

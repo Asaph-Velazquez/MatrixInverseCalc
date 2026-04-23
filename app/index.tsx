@@ -1,6 +1,6 @@
+import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useRef, useState } from "react";
 import {
-  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -12,9 +12,41 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { calcularInversaModular } from "../src/utils/Matriz";
+import { Card } from "../src/components/Card";
+import { DimensionSelectorGroup } from "../src/components/DimensionSelector";
+import { MatrixDisplay } from "../src/components/MatrixDisplay";
+import { MatrixInput } from "../src/components/MatrixInput";
+import { OperationSelector } from "../src/components/OperationSelector";
+import {
+  calcularInversaModular,
+  determinanteModular,
+  multiplicarMatricesMod,
+  sumarMatrices,
+} from "../src/utils/Matriz";
 
 type Dimension = 2 | 3;
+type Operation = "inversa" | "suma" | "multiplicacion" | "determinante";
+
+const colors = {
+  light: {
+    bg: "#ffffff",
+    surface: "#fafafa",
+    border: "#e4e4e7",
+    text: "#18181b",
+    textMuted: "#71717a",
+    accent: "#5b76fe",
+    success: "#00b473",
+  },
+  dark: {
+    bg: "#09090b",
+    surface: "#18181b",
+    border: "#27272a",
+    text: "#fafafa",
+    textMuted: "#a1a1aa",
+    accent: "#7c92fe",
+    success: "#00b473",
+  },
+};
 
 interface AlertModalProps {
   visible: boolean;
@@ -69,9 +101,17 @@ function AlertModal({
               className="mr-3 h-10 w-10 items-center justify-center rounded-full"
               style={{ backgroundColor: darkTc.bg }}
             >
-              <Text className="text-2xl" style={{ color: darkTc.text }}>
-                {type === "error" ? "✕" : type === "warning" ? "!" : "i"}
-              </Text>
+              <Ionicons
+                name={
+                  type === "error"
+                    ? "close"
+                    : type === "warning"
+                      ? "warning"
+                      : "information-circle"
+                }
+                size={22}
+                color={darkTc.text}
+              />
             </View>
             <Text
               className="text-xl font-semibold"
@@ -90,39 +130,25 @@ function AlertModal({
 
           <TouchableOpacity
             onPress={onClose}
-            className="w-full rounded-lg py-3"
+            className="w-full rounded-xl py-3"
             style={{ backgroundColor: cols.accent }}
           >
-            <Text className="text-center text-base font-medium text-white">
-              Aceptar
-            </Text>
+            <View className="flex-row items-center justify-center gap-2">
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={18}
+                color="#ffffff"
+              />
+              <Text className="text-center text-base font-semibold text-white">
+                Aceptar
+              </Text>
+            </View>
           </TouchableOpacity>
         </View>
       </View>
     </Modal>
   );
 }
-
-const colors = {
-  light: {
-    bg: "#ffffff",
-    surface: "#fafafa",
-    border: "#e4e4e7",
-    text: "#18181b",
-    textMuted: "#71717a",
-    accent: "#5b76fe",
-    success: "#00b473",
-  },
-  dark: {
-    bg: "#09090b",
-    surface: "#18181b",
-    border: "#27272a",
-    text: "#fafafa",
-    textMuted: "#a1a1aa",
-    accent: "#7c92fe",
-    success: "#00b473",
-  },
-};
 
 export default function Index() {
   const colorScheme = useColorScheme();
@@ -132,14 +158,32 @@ export default function Index() {
   const cols = isDark ? colors.dark : colors.light;
 
   const [dimension, setDimension] = useState<Dimension>(2);
+  const [dimensionB, setDimensionB] = useState<Dimension>(2);
+  const [operation, setOperation] = useState<Operation>("inversa");
   const [n, setN] = useState("");
   const [matriz, setMatriz] = useState<string[][]>([
     ["", "", "", ""],
     ["", "", "", ""],
   ]);
-  const [resultado, setResultado] = useState<ReturnType<
-    typeof calcularInversaModular
-  > | null>(null);
+  const [matrizB, setMatrizB] = useState<string[][]>([
+    ["", "", "", ""],
+    ["", "", "", ""],
+  ]);
+  const [resultado, setResultado] = useState<{
+    exitosa: boolean;
+    matrizInversa?: number[][];
+    matrizSuma?: number[][];
+    matrizProducto?: number[][];
+    matrizVerificacion?: number[][];
+    factorEscala?: number;
+    esIdentidad?: boolean;
+    coprimos?: boolean;
+    determinante?: number;
+    determinanteSimple?: number;
+    n?: number;
+    matrizOriginal?: number[][];
+    pasos?: string[];
+  } | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [alertModal, setAlertModal] = useState<{
     visible: boolean;
@@ -149,22 +193,7 @@ export default function Index() {
   }>({ visible: false, title: "", message: "", type: "error" });
   const showSidePanel = isWide && !!resultado;
   const refsMatriz = useRef<Array<Array<TextInput | null>>>([]);
-
-  const enfocarSiguienteCelda = (fila: number, col: number) => {
-    const siguienteCol = col + 1;
-    if (siguienteCol < dimension) {
-      refsMatriz.current[fila]?.[siguienteCol]?.focus();
-      return;
-    }
-
-    const siguienteFila = fila + 1;
-    if (siguienteFila < dimension) {
-      refsMatriz.current[siguienteFila]?.[0]?.focus();
-      return;
-    }
-
-    Keyboard.dismiss();
-  };
+  const refsMatrizB = useRef<Array<Array<TextInput | null>>>([]);
 
   const parsearMatrizSerializada = (texto: string): number[][] | null => {
     const normalizado = texto.trim();
@@ -191,7 +220,7 @@ export default function Index() {
   };
 
   const datosProceso = useMemo(() => {
-    if (!resultado) {
+    if (!resultado || !resultado.pasos) {
       return {
         adjunta: null as number[][] | null,
         escalada: null as number[][] | null,
@@ -201,19 +230,21 @@ export default function Index() {
       };
     }
 
+    const pasos = resultado.pasos;
+
     const buscarMatrizDespuesDe = (textoPaso: string): number[][] | null => {
-      const idx = resultado.pasos.findIndex((p) => p.includes(textoPaso));
-      if (idx === -1 || idx + 1 >= resultado.pasos.length) {
+      const idx = pasos.findIndex((p) => p.includes(textoPaso));
+      if (idx === -1 || idx + 1 >= pasos.length) {
         return null;
       }
-      return parsearMatrizSerializada(resultado.pasos[idx + 1]);
+      return parsearMatrizSerializada(pasos[idx + 1]);
     };
 
     const gcdTexto =
-      resultado.pasos.find((p) => p.startsWith("gcd(")) ||
+      pasos.find((p) => p.startsWith("gcd(")) ||
       `gcd(${resultado.determinante}, ${resultado.n}) = ?`;
 
-    const inversoPaso = resultado.pasos.find((p) =>
+    const inversoPaso = pasos.find((p) =>
       p.startsWith("Inverso modular del determinante:"),
     );
     const inversoDet = inversoPaso
@@ -231,43 +262,66 @@ export default function Index() {
 
   const iniciarMatriz = (dim: Dimension) => {
     setDimension(dim);
-    const nuevosInputs =
-      dim === 2
-        ? [
-            ["", "", "", ""],
-            ["", "", "", ""],
-          ]
-        : [
-            ["", "", "", "", "", "", "", ""],
-            ["", "", "", "", "", "", "", ""],
-            ["", "", "", "", "", "", ""],
-          ];
-    setMatriz(nuevosInputs);
+    const matrizAInputs = crearMatrizVacia(dim);
+    const matrizBInputs = crearMatrizVacia(dim);
+    setMatriz(matrizAInputs);
+    setMatrizB(matrizBInputs);
+    setDimensionB(dim);
     refsMatriz.current = [];
+    refsMatrizB.current = [];
     setResultado(null);
   };
 
+  const crearMatrizVacia = (dim: Dimension): string[][] => {
+    return Array.from({ length: dim }).map(() =>
+      Array.from({ length: dim }).map(() => ""),
+    );
+  };
+
+  const limpiarMatrizA = () => {
+    setMatriz(crearMatrizVacia(dimension));
+    refsMatriz.current = [];
+    setResultado(null);
+    setModalVisible(false);
+  };
+
+  const limpiarMatrizB = () => {
+    setMatrizB(crearMatrizVacia(dimensionB));
+    refsMatrizB.current = [];
+    setResultado(null);
+    setModalVisible(false);
+  };
+
   const actualizarCelda = (fila: number, col: number, valor: string) => {
-    const nuevaMatriz = [...matriz];
-    if (!nuevaMatriz[fila]) {
-      nuevaMatriz[fila] = [];
-    }
-    nuevaMatriz[fila][col] = valor;
-    setMatriz(nuevaMatriz);
+    setMatriz((prev) => {
+      const nuevaMatriz = prev.map((filaArr) => [...filaArr]);
+      nuevaMatriz[fila][col] = valor;
+      return nuevaMatriz;
+    });
+  };
+
+  const actualizarCeldaB = (fila: number, col: number, valor: string) => {
+    setMatrizB((prev) => {
+      if (!prev[fila]) return prev;
+      const nuevaMatriz = prev.map((filaArr) => [...filaArr]);
+      nuevaMatriz[fila][col] = valor;
+      return nuevaMatriz;
+    });
   };
 
   const obtenerMatrizNumerica = (): number[][] => {
-    const resultado: number[][] = [];
+    return matriz.map((fila) =>
+      fila.map((valor) => (valor === "" ? 0 : parseInt(valor, 10))),
+    );
+  };
 
-    for (let i = 0; i < dimension; i++) {
-      resultado[i] = [];
-      for (let j = 0; j < dimension; j++) {
-        const valor = matriz[i][j];
-        resultado[i][j] = valor === "" ? 0 : parseInt(valor, 10);
-      }
-    }
-
-    return resultado;
+  const obtenerMatrizBNumerica = (): number[][] => {
+    if (!matrizB || matrizB.length === 0) return [];
+    return matrizB.map((fila) =>
+      (fila || []).map((valor) =>
+        valor === "" ? 0 : parseInt(valor, 10) || 0,
+      ),
+    );
   };
 
   const calcularInversa = () => {
@@ -294,16 +348,17 @@ export default function Index() {
 
     for (let i = 0; i < dimension; i++) {
       for (let j = 0; j < dimension; j++) {
-        if (!matriz[i] || matriz[i][j] === "") {
+        const celda = matriz[i]?.[j];
+        if (celda === undefined || celda === "") {
           setAlertModal({
             visible: true,
             title: "Error",
-            message: "Complete todas las celdas de la matriz",
+            message: "Complete todas las celdas de la Matriz A",
             type: "error",
           });
           return;
         }
-        const val = parseInt(matriz[i][j], 10);
+        const val = parseInt(celda, 10);
         if (isNaN(val)) {
           setAlertModal({
             visible: true,
@@ -318,7 +373,18 @@ export default function Index() {
 
     const matrizNumerica = obtenerMatrizNumerica();
     const res = calcularInversaModular(matrizNumerica, nVal);
-    setResultado(res);
+    setResultado({
+      exitosa: res.exitosa,
+      matrizInversa: res.matrizInversa,
+      matrizVerificacion: res.matrizVerificacion,
+      factorEscala: res.factorEscala,
+      esIdentidad: res.esIdentidad,
+      coprimos: res.coprimos,
+      determinante: res.determinante,
+      n: res.n,
+      matrizOriginal: res.matrizOriginal,
+      pasos: res.pasos,
+    });
 
     if (!res.exitosa) {
       setAlertModal({
@@ -330,11 +396,132 @@ export default function Index() {
     }
   };
 
-  const renderizarMatrizEnProceso = (
-    matrizRender: number[][],
-    titulo: string,
-  ) => {
-    return (
+  const calcularOperacion = () => {
+    if (!n) {
+      setAlertModal({
+        visible: true,
+        title: "Error",
+        message: "Ingrese el valor de n",
+        type: "error",
+      });
+      return;
+    }
+
+    const nVal = parseInt(n, 10);
+    if (isNaN(nVal) || nVal <= 0) {
+      setAlertModal({
+        visible: true,
+        title: "Error",
+        message: "n debe ser un número positivo",
+        type: "error",
+      });
+      return;
+    }
+
+    const matrizA = obtenerMatrizNumerica();
+    const matrizBNum = obtenerMatrizBNumerica();
+    if (operation === "inversa") {
+      calcularInversa();
+      return;
+    }
+
+    const validarMatriz = (matriz: number[][], nombre: string) => {
+      if (
+        !matriz ||
+        matriz.length === 0 ||
+        !matriz[0] ||
+        matriz[0].length === 0
+      ) {
+        setAlertModal({
+          visible: true,
+          title: "Error",
+          message: `La ${nombre} está vacía o mal configurada`,
+          type: "error",
+        });
+        return false;
+      }
+      return true;
+    };
+
+    if (!validarMatriz(matrizA, "Matriz A")) return;
+    if (!validarMatriz(matrizBNum, "Matriz B")) return;
+
+    if (operation === "suma") {
+      if (dimension !== dimensionB) {
+        setAlertModal({
+          visible: true,
+          title: "Error",
+          message: "Para sumar, ambas matrices deben tener la misma dimensión",
+          type: "error",
+        });
+        return;
+      }
+      const suma = sumarMatrices(matrizA, matrizBNum, nVal);
+      setResultado({
+        exitosa: true,
+        matrizSuma: suma,
+      });
+    } else if (operation === "multiplicacion") {
+      if (dimension !== dimensionB) {
+        setAlertModal({
+          visible: true,
+          title: "Info",
+          message: `Multiplicando matrices de ${dimension}×${dimension} × ${dimensionB}×${dimensionB}`,
+          type: "info",
+        });
+      }
+      const producto = multiplicarMatricesMod(matrizA, matrizBNum, nVal);
+      setResultado({
+        exitosa: true,
+        matrizProducto: producto,
+      });
+    } else if (operation === "determinante") {
+      if (matrizA.length === 0 || matrizA[0].length === 0) {
+        setAlertModal({
+          visible: true,
+          title: "Error",
+          message: "La Matriz A está vacía",
+          type: "error",
+        });
+        return;
+      }
+      const detSimple =
+        dimension === 2
+          ? matrizA[0][0] * matrizA[1][1] - matrizA[0][1] * matrizA[1][0]
+          : matrizA[0][0] * matrizA[1][1] * matrizA[2][2] +
+            matrizA[0][1] * matrizA[1][2] * matrizA[2][0] +
+            matrizA[0][2] * matrizA[1][0] * matrizA[2][1] -
+            matrizA[0][2] * matrizA[1][1] * matrizA[2][0] -
+            matrizA[0][0] * matrizA[1][2] * matrizA[2][1] -
+            matrizA[0][1] * matrizA[1][0] * matrizA[2][2];
+      const detMod = determinanteModular(matrizA, nVal);
+      setResultado({
+        exitosa: true,
+        determinanteSimple: detSimple,
+        determinante: detMod,
+        n: nVal,
+        matrizOriginal: matrizA,
+      });
+    }
+  };
+
+  const cambiarDimensionB = (dim: Dimension) => {
+    setDimensionB(dim);
+    setMatrizB(crearMatrizVacia(dim));
+    refsMatrizB.current = [];
+  };
+
+  const renderizarProceso = () => {
+    if (
+      !resultado ||
+      !resultado.matrizOriginal ||
+      resultado.determinante === undefined ||
+      resultado.determinante === null
+    )
+      return null;
+
+    const matrizA = resultado.matrizOriginal;
+    const renderizarMatriz = (matrizRender: number[][], titulo: string) => (
       <View className="my-3">
         <Text
           className="mb-2 text-base font-medium"
@@ -355,14 +542,13 @@ export default function Index() {
                 [
               </Text>
               {fila.map((valor, colIdx) => (
-                <View key={colIdx}>
-                  <Text
-                    className="min-w-12 text-center text-xl font-medium"
-                    style={{ color: cols.accent }}
-                  >
-                    {valor}
-                  </Text>
-                </View>
+                <Text
+                  key={colIdx}
+                  className="min-w-12 text-center text-xl font-medium"
+                  style={{ color: cols.accent }}
+                >
+                  {valor}
+                </Text>
               ))}
               <Text
                 className="pl-2 text-2xl font-medium"
@@ -375,12 +561,7 @@ export default function Index() {
         </View>
       </View>
     );
-  };
 
-  const renderizarProceso = () => {
-    if (!resultado) return null;
-
-    const matrizA = resultado.matrizOriginal;
     const detalleDeterminante =
       matrizA.length === 2
         ? `${matrizA[0][0]}×${matrizA[1][1]} - ${matrizA[0][1]}×${matrizA[1][0]} = ${resultado.determinante}`
@@ -399,7 +580,7 @@ export default function Index() {
             Esta es la matriz ingresada, sobre la cual se calcula la inversa
             modular.
           </Text>
-          {renderizarMatrizEnProceso(resultado.matrizOriginal, "A =")}
+          {renderizarMatriz(matrizA, "A =")}
         </View>
 
         <View
@@ -469,7 +650,7 @@ export default function Index() {
             <Text className="mt-2 text-sm" style={{ color: cols.textMuted }}>
               Adj(A) es la transpuesta de la matriz de cofactores.
             </Text>
-            {renderizarMatrizEnProceso(datosProceso.adjunta, "Adj(A) =")}
+            {renderizarMatriz(datosProceso.adjunta, "Adj(A) =")}
           </View>
         )}
 
@@ -487,7 +668,7 @@ export default function Index() {
             <Text className="mt-2 text-sm" style={{ color: cols.text }}>
               A^-1 preliminar = Adj(A) × k
             </Text>
-            {renderizarMatrizEnProceso(datosProceso.escalada, "Adj(A) × k =")}
+            {renderizarMatriz(datosProceso.escalada, "Adj(A) × k =")}
           </View>
         )}
 
@@ -505,10 +686,8 @@ export default function Index() {
             <Text className="mt-2 text-sm" style={{ color: cols.textMuted }}>
               Se reduce cada componente al rango [0, n-1].
             </Text>
-            {renderizarMatrizEnProceso(
-              resultado.matrizInversa,
-              "A^-1 (mod n) =",
-            )}
+            {resultado.matrizInversa &&
+              renderizarMatriz(resultado.matrizInversa, "A^-1 (mod n) =")}
           </View>
         )}
 
@@ -527,14 +706,15 @@ export default function Index() {
               Se calcula A × A^-1 y luego se aplica módulo {resultado.n}.
             </Text>
             {datosProceso.verificacionSinModulo &&
-              renderizarMatrizEnProceso(
+              renderizarMatriz(
                 datosProceso.verificacionSinModulo,
                 "A × A^-1 (sin módulo) =",
               )}
-            {renderizarMatrizEnProceso(
-              resultado.matrizVerificacion,
-              `A × A^-1 (mod ${resultado.n}) =`,
-            )}
+            {resultado.matrizVerificacion &&
+              renderizarMatriz(
+                resultado.matrizVerificacion,
+                `A × A^-1 (mod ${resultado.n}) =`,
+              )}
             <View
               className="mt-2 rounded-lg p-3"
               style={{ backgroundColor: isDark ? "#27272a" : "#f4f4f5" }}
@@ -556,52 +736,18 @@ export default function Index() {
     );
   };
 
-  const renderizarInputs = () => {
-    const filas = [];
-    for (let i = 0; i < dimension; i++) {
-      const filaInputs = [];
-      for (let j = 0; j < dimension; j++) {
-        filaInputs.push(
-          <TextInput
-            key={`${i}-${j}`}
-            ref={(ref) => {
-              if (!refsMatriz.current[i]) {
-                refsMatriz.current[i] = [];
-              }
-              refsMatriz.current[i][j] = ref;
-            }}
-            className={`h-14 w-14 shrink-0 rounded-lg border px-2 py-3 text-center text-xl font-medium shadow-ring md:w-16 md:text-2xl ${
-              isDark
-                ? "bg-zinc-700 border-zinc-600 text-zinc-100 placeholder-zinc-500"
-                : "bg-miro-white border-neutral-border text-miro-black placeholder-zinc-400"
-            }`}
-            keyboardType="numeric"
-            returnKeyType="next"
-            submitBehavior="submit"
-            onSubmitEditing={() => enfocarSiguienteCelda(i, j)}
-            onKeyPress={({ nativeEvent }) => {
-              if (nativeEvent.key === "Enter") {
-                enfocarSiguienteCelda(i, j);
-              }
-            }}
-            value={matriz[i]?.[j] || ""}
-            onChangeText={(text) => actualizarCelda(i, j, text)}
-            placeholder="0"
-            placeholderTextColor={isDark ? "#71717a" : "#a5a8b5"}
-          />,
-        );
-      }
-      filas.push(
-        <View
-          key={`fila-${i}`}
-          className="mb-3 flex flex-row items-center justify-center self-center gap-2"
-          style={{ alignSelf: "center" }}
-        >
-          {filaInputs}
-        </View>,
-      );
-    }
-    return filas;
+  const operationTitles = {
+    inversa: "de Inversas",
+    suma: "de Suma",
+    multiplicacion: "de Multiplicación",
+    determinante: "de Determinantes",
+  };
+
+  const buttonLabels = {
+    inversa: "Calcular Inversa",
+    suma: "Sumar Matrices",
+    multiplicacion: "Multiplicar Matrices",
+    determinante: "Calcular Determinante",
   };
 
   return (
@@ -628,7 +774,7 @@ export default function Index() {
               isDark ? "text-zinc-100" : "text-miro-black"
             }`}
           >
-            de Inversas
+            {operationTitles[operation]}
           </Text>
           <Text
             className={`mt-2 text-lg ${isDark ? "text-zinc-400" : "text-neutral-slate"}`}
@@ -641,66 +787,20 @@ export default function Index() {
           className={`mx-auto w-full ${showSidePanel ? "max-w-6xl flex-row items-start gap-6" : "max-w-2xl"}`}
         >
           <View className={showSidePanel ? "flex-1" : "w-full"}>
-            <View
-              className={`mb-6 w-full rounded-xl border p-5 shadow-ring ${
-                isDark
-                  ? "bg-zinc-800 border-zinc-700"
-                  : "bg-miro-white border-neutral-border"
-              }`}
-            >
-              <Text
-                className={`mb-4 text-lg font-medium text-center ${
-                  isDark ? "text-zinc-100" : "text-miro-black"
-                }`}
-              >
-                Dimensión
-              </Text>
-              <View className="flex flex-row justify-center gap-3">
-                <TouchableOpacity
-                  onPress={() => iniciarMatriz(2)}
-                  className={`flex-1 rounded-lg py-3 px-4 border ${
-                    dimension === 2
-                      ? "bg-primary-blue border-primary-blue"
-                      : `border-neutral-border bg-transparent ${
-                          isDark ? "border-zinc-600" : ""
-                        }`
-                  }`}
-                >
-                  <Text
-                    className={`text-center text-lg font-medium ${
-                      dimension === 2
-                        ? "text-miro-white"
-                        : isDark
-                          ? "text-zinc-100"
-                          : "text-miro-black"
-                    }`}
-                  >
-                    2×2
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => iniciarMatriz(3)}
-                  className={`flex-1 rounded-lg py-3 px-4 border ${
-                    dimension === 3
-                      ? "bg-primary-blue border-primary-blue"
-                      : `border-neutral-border bg-transparent ${
-                          isDark ? "border-zinc-600" : ""
-                        }`
-                  }`}
-                >
-                  <Text
-                    className={`text-center text-lg font-medium ${
-                      dimension === 3
-                        ? "text-miro-white"
-                        : isDark
-                          ? "text-zinc-100"
-                          : "text-miro-black"
-                    }`}
-                  >
-                    3×3
-                  </Text>
-                </TouchableOpacity>
-              </View>
+            <Card title="Operación" isDark={isDark}>
+              <OperationSelector
+                operation={operation}
+                onChange={setOperation}
+                isDark={isDark}
+              />
+            </Card>
+
+            <Card title="Dimensión" isDark={isDark}>
+              <DimensionSelectorGroup
+                dimension={dimension}
+                onChange={iniciarMatriz}
+                isDark={isDark}
+              />
 
               <Text
                 className={`mt-5 mb-2 text-lg font-medium text-center ${
@@ -721,39 +821,217 @@ export default function Index() {
                 placeholder="Ingrese n"
                 placeholderTextColor={isDark ? "#71717a" : "#a5a8b5"}
               />
-            </View>
+            </Card>
 
-            <View
-              className={`mb-6 w-full rounded-xl border p-5 shadow-ring ${
-                isDark
-                  ? "bg-zinc-800 border-zinc-700"
-                  : "bg-miro-white border-neutral-border"
-              }`}
-            >
-              <Text
-                className={`mb-4 text-lg font-medium text-center ${
-                  isDark ? "text-zinc-100" : "text-miro-black"
+            <Card title={`Matriz A ${dimension}×${dimension}`} isDark={isDark}>
+              <MatrixInput
+                matriz={matriz}
+                dimension={dimension}
+                refs={refsMatriz}
+                onCellChange={actualizarCelda}
+                isDark={isDark}
+              />
+              <TouchableOpacity
+                onPress={limpiarMatrizA}
+                className={`mt-4 flex-row items-center justify-center gap-2 rounded-xl border px-4 py-3 ${
+                  isDark
+                    ? "border-zinc-600 bg-zinc-900/40"
+                    : "border-neutral-border bg-miro-white"
                 }`}
               >
-                Matriz {dimension}×{dimension}
-              </Text>
-              <View className="flex flex-col items-center">
-                {renderizarInputs()}
-              </View>
-            </View>
+                <Ionicons
+                  name="trash-outline"
+                  size={18}
+                  color={isDark ? "#fafafa" : "#18181b"}
+                />
+                <Text
+                  className={`text-sm font-semibold ${
+                    isDark ? "text-zinc-100" : "text-miro-black"
+                  }`}
+                >
+                  Borrar Matriz A
+                </Text>
+              </TouchableOpacity>
+            </Card>
+
+            {operation === "multiplicacion" && (
+              <Card title={`Dimensión Matriz B`} isDark={isDark}>
+                <DimensionSelectorGroup
+                  dimension={dimensionB}
+                  onChange={cambiarDimensionB}
+                  isDark={isDark}
+                />
+              </Card>
+            )}
+
+            {operation === "multiplicacion" && (
+              <Card
+                title={`Matriz B ${dimensionB}×${dimensionB}`}
+                isDark={isDark}
+              >
+                <MatrixInput
+                  matriz={matrizB}
+                  dimension={dimensionB}
+                  refs={refsMatrizB}
+                  onCellChange={actualizarCeldaB}
+                  isDark={isDark}
+                />
+                <TouchableOpacity
+                  onPress={limpiarMatrizB}
+                  className={`mt-4 flex-row items-center justify-center gap-2 rounded-xl border px-4 py-3 ${
+                    isDark
+                      ? "border-zinc-600 bg-zinc-900/40"
+                      : "border-neutral-border bg-miro-white"
+                  }`}
+                >
+                  <Ionicons
+                    name="trash-outline"
+                    size={18}
+                    color={isDark ? "#fafafa" : "#18181b"}
+                  />
+                  <Text
+                    className={`text-sm font-semibold ${
+                      isDark ? "text-zinc-100" : "text-miro-black"
+                    }`}
+                  >
+                    Borrar Matriz B
+                  </Text>
+                </TouchableOpacity>
+              </Card>
+            )}
+
+            {operation === "suma" && (
+              <Card
+                title={`Matriz B ${dimension}×${dimension}`}
+                isDark={isDark}
+              >
+                <MatrixInput
+                  matriz={matrizB}
+                  dimension={dimension}
+                  refs={refsMatrizB}
+                  onCellChange={actualizarCeldaB}
+                  isDark={isDark}
+                />
+              </Card>
+            )}
 
             <TouchableOpacity
-              onPress={calcularInversa}
-              className="mb-6 w-full rounded-lg bg-primary-blue py-4 px-6"
+              onPress={calcularOperacion}
+              className="mb-6 w-full rounded-2xl border border-blue-400/30 bg-primary-blue px-6 py-4 shadow-lg shadow-blue-500/20 active:opacity-90"
             >
-              <Text className="text-center text-lg font-medium text-miro-white tracking-wide">
-                Calcular Inversa
-              </Text>
+              <View className="flex-row items-center justify-center gap-2">
+                <Ionicons
+                  name="play-circle-outline"
+                  size={20}
+                  color="#ffffff"
+                />
+                <Text className="text-center text-lg font-semibold tracking-wide text-miro-white">
+                  {buttonLabels[operation]}
+                </Text>
+              </View>
             </TouchableOpacity>
           </View>
 
           <View className={showSidePanel ? "flex-1" : "w-full"}>
-            {resultado && resultado.exitosa && (
+            {resultado && resultado.exitosa && operation === "inversa" && (
+              <>
+                {resultado.matrizInversa && (
+                  <MatrixDisplay
+                    matriz={resultado.matrizInversa}
+                    titulo="Matriz Inversa"
+                    subtitulo={`Factor: ${resultado.factorEscala}`}
+                    isDark={isDark}
+                  />
+                )}
+
+                {resultado.matrizVerificacion && (
+                  <View
+                    className={`mb-6 w-full rounded-xl border p-5 ${
+                      isDark
+                        ? "bg-zinc-800 border-accent-moss-dark"
+                        : "bg-accent-moss/30 border-accent-moss"
+                    }`}
+                  >
+                    <Text
+                      className={`mb-4 text-lg font-medium text-center ${
+                        isDark ? "text-zinc-100" : "text-miro-black"
+                      }`}
+                    >
+                      Verificación
+                    </Text>
+                    <Text
+                      className={`mb-3 text-center text-base ${
+                        isDark ? "text-zinc-400" : "text-neutral-slate"
+                      }`}
+                    >
+                      A × A⁻¹ (mod {n})
+                    </Text>
+                    {resultado.matrizVerificacion && (
+                      <View className="flex flex-col">
+                        {resultado.matrizVerificacion.map((fila, filaIdx) => (
+                          <View
+                            key={filaIdx}
+                            className="mb-3 flex flex-row justify-center gap-2"
+                          >
+                            {fila.map((valor, colIdx) => (
+                              <View
+                                key={colIdx}
+                                className={`h-12 w-12 shrink-0 items-center justify-center rounded-lg border ${
+                                  isDark
+                                    ? "bg-zinc-700 border-zinc-600"
+                                    : "bg-miro-white border-neutral-border"
+                                }`}
+                              >
+                                <Text
+                                  className={`text-center text-base font-medium ${
+                                    isDark ? "text-zinc-100" : "text-miro-black"
+                                  }`}
+                                >
+                                  {valor}
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                    <Text
+                      className={`mt-3 text-center text-base font-medium ${
+                        isDark ? "text-zinc-100" : "text-miro-black"
+                      }`}
+                    >
+                      ✓ Identidad
+                    </Text>
+                  </View>
+                )}
+              </>
+            )}
+
+            {resultado &&
+              resultado.exitosa &&
+              operation === "suma" &&
+              resultado.matrizSuma && (
+                <MatrixDisplay
+                  matriz={resultado.matrizSuma}
+                  titulo="Resultado de Suma"
+                  subtitulo={`A + B (mod ${n})`}
+                  isDark={isDark}
+                />
+              )}
+
+            {resultado &&
+              resultado.exitosa &&
+              operation === "multiplicacion" &&
+              resultado.matrizProducto && (
+                <MatrixDisplay
+                  matriz={resultado.matrizProducto}
+                  titulo="Resultado de Multiplicación"
+                  subtitulo={`A × B (mod ${n})`}
+                  isDark={isDark}
+                />
+              )}
+
+            {resultado && resultado.exitosa && operation === "determinante" && (
               <View
                 className={`mb-6 w-full rounded-xl border p-5 ${
                   isDark
@@ -761,114 +1039,93 @@ export default function Index() {
                     : "bg-accent-teal/30 border-accent-teal"
                 }`}
               >
-                <Text
-                  className={`mb-4 text-xl font-medium text-center ${
-                    isDark ? "text-zinc-100" : "text-miro-black"
-                  }`}
-                >
-                  Matriz Inversa
-                </Text>
-                <View className="flex flex-col">
-                  {resultado.matrizInversa.map((fila, filaIdx) => (
-                    <View
-                      key={filaIdx}
-                      className="mb-3 flex flex-row items-center justify-center gap-2"
-                    >
-                      {fila.map((valor, colIdx) => (
-                        <View
-                          key={colIdx}
-                          className={`h-14 w-16 items-center justify-center rounded-lg border ${
-                            isDark
-                              ? "bg-zinc-700 border-primary-blue-light"
-                              : "bg-miro-white border-primary-blue"
-                          }`}
-                        >
+                <View className="mb-4 flex-row items-center justify-center gap-2">
+                  <Ionicons
+                    name="calculator-outline"
+                    size={20}
+                    color={isDark ? "#fafafa" : "#18181b"}
+                  />
+                  <Text
+                    className={`text-xl font-medium text-center ${
+                      isDark ? "text-zinc-100" : "text-miro-black"
+                    }`}
+                  >
+                    Determinante
+                  </Text>
+                </View>
+                <View className="items-center">
+                  <View
+                    className={`mb-4 rounded-lg border p-4 ${
+                      isDark
+                        ? "bg-zinc-700 border-zinc-600"
+                        : "bg-miro-white border-neutral-border"
+                    }`}
+                  >
+                    <View className="flex-row items-center justify-center gap-2">
+                      <Ionicons
+                        name="close-circle-outline"
+                        size={18}
+                        color={isDark ? "#93c5fd" : "#2563eb"}
+                      />
+                      <Text
+                        className={`text-center text-3xl font-bold ${
+                          isDark
+                            ? "text-primary-blue-light"
+                            : "text-primary-blue"
+                        }`}
+                      >
+                        {resultado.determinanteSimple}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text
+                    className={`text-center text-base ${
+                      isDark ? "text-zinc-400" : "text-neutral-slate"
+                    }`}
+                  >
+                    Determinante sin módulo
+                  </Text>
+                </View>
+                {resultado.determinante !== undefined &&
+                  resultado.n !== undefined && (
+                    <View className="mt-6 items-center">
+                      <View
+                        className={`mb-4 rounded-lg border p-4 ${
+                          isDark
+                            ? "bg-zinc-700 border-zinc-600"
+                            : "bg-miro-white border-neutral-border"
+                        }`}
+                      >
+                        <View className="flex-row items-center justify-center gap-2">
+                          <Ionicons
+                            name="calculator-outline"
+                            size={18}
+                            color={isDark ? "#93c5fd" : "#2563eb"}
+                          />
                           <Text
-                            className={`text-center text-xl font-medium ${
+                            className={`text-center text-3xl font-bold ${
                               isDark
                                 ? "text-primary-blue-light"
                                 : "text-primary-blue"
                             }`}
                           >
-                            {valor}
+                            {resultado.determinante}
                           </Text>
                         </View>
-                      ))}
+                      </View>
+                      <Text
+                        className={`text-center text-base ${
+                          isDark ? "text-zinc-400" : "text-neutral-slate"
+                        }`}
+                      >
+                        Determinante (mod {resultado.n})
+                      </Text>
                     </View>
-                  ))}
-                </View>
-                <Text
-                  className={`mt-3 text-center text-base ${
-                    isDark ? "text-zinc-400" : "text-neutral-slate"
-                  }`}
-                >
-                  Factor: {resultado.factorEscala}
-                </Text>
+                  )}
               </View>
             )}
 
-            {resultado && resultado.exitosa && (
-              <View
-                className={`mb-6 w-full rounded-xl border p-5 ${
-                  isDark
-                    ? "bg-zinc-800 border-accent-moss-dark"
-                    : "bg-accent-moss/30 border-accent-moss"
-                }`}
-              >
-                <Text
-                  className={`mb-4 text-lg font-medium text-center ${
-                    isDark ? "text-zinc-100" : "text-miro-black"
-                  }`}
-                >
-                  Verificación
-                </Text>
-                <Text
-                  className={`mb-3 text-center text-base ${
-                    isDark ? "text-zinc-400" : "text-neutral-slate"
-                  }`}
-                >
-                  A × A⁻¹ (mod {n})
-                </Text>
-                <View className="flex flex-col">
-                  {resultado.matrizVerificacion.map((fila, filaIdx) => (
-                    <View
-                      key={filaIdx}
-                      className="mb-3 flex flex-row justify-center gap-2"
-                    >
-                      {fila.map((valor, colIdx) => (
-                        <View
-                          key={colIdx}
-                          className={`h-14 w-16 items-center justify-center rounded-lg border ${
-                            isDark
-                              ? "bg-zinc-700 border-zinc-600"
-                              : "bg-miro-white border-neutral-border"
-                          }`}
-                        >
-                          <Text
-                            className={`text-center text-xl font-medium ${
-                              isDark ? "text-zinc-100" : "text-miro-black"
-                            }`}
-                          >
-                            {valor}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  ))}
-                </View>
-                <Text
-                  className={`mt-3 text-center text-lg font-medium ${
-                    resultado.esIdentidad
-                      ? "text-semantic-success"
-                      : "text-semantic-error"
-                  }`}
-                >
-                  {resultado.esIdentidad ? "✓ Identidad" : "✗ Error"}
-                </Text>
-              </View>
-            )}
-
-            {resultado && (
+            {resultado && resultado.exitosa && operation === "inversa" && (
               <TouchableOpacity
                 onPress={() => setModalVisible(true)}
                 className={`mb-6 w-full rounded-lg border py-4 px-6 ${

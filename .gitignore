@@ -73,3 +73,6 @@ coverage/
 
 # Misc
 *.lock
+
+#Ps1
+*.ps1
